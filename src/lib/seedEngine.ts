@@ -164,6 +164,7 @@ export async function seedDemoData(onProgress?: SeedProgress) {
         activated_at: activated,
         tat_deadline: tat,
         assigned_to: assignee.id,
+        assigned_at: activated, // Assuming it was assigned when activated for seeding
       });
     }
   }

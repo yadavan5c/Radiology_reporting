@@ -164,6 +164,7 @@ async function seed() {
         activated_at: activated,
         tat_deadline: tat,
         assigned_to: assignee.id,
+        assigned_at: activated,
       });
     }
   }
