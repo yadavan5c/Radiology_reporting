@@ -137,9 +137,36 @@ export default function OpsCommandCenter() {
     };
   }, []);
 
+  // 1. Core Derived Data (The Base for everything else)
+  const filtered = useMemo(() => {
+    const activeIds = new Set(rads.filter((r) => r.is_active).map((r) => r.id));
+    let list = cases.filter((c) => {
+      if (modalityFilter !== "all" && c.modality !== modalityFilter) return false;
+      if (urgencyFilter !== "all" && c.urgency !== urgencyFilter) return false;
+      if (statusFilter !== "all" && c.status !== statusFilter) return false;
+      if (radFilter === "active" && !(c.assigned_to && activeIds.has(c.assigned_to))) return false;
+      if (radFilter === "inactive" && !(c.assigned_to && !activeIds.has(c.assigned_to))) return false;
+      if (breachOnly && !(c.status !== "completed" && new Date(c.tat_deadline).getTime() <= Date.now())) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        if (
+          !c.case_number.toLowerCase().includes(q) &&
+          !c.patient_name.toLowerCase().includes(q) &&
+          !c.study_type.toLowerCase().includes(q)
+        ) return false;
+      }
+      return true;
+    });
+    if (sortMode === "priority") {
+      list = [...list].sort((a, b) => priorityScore(a) - priorityScore(b));
+    }
+    return list;
+  }, [cases, rads, modalityFilter, urgencyFilter, radFilter, breachOnly, search, sortMode]);
+
+  // 2. Secondary Derived Data (KPIs and Charts)
   const now = Date.now();
-  
   const filteredActive = filtered.filter((c) => c.status !== "completed");
+  
   const totalPool = filteredActive.length;
   const slaAtRisk = filteredActive.filter(
     (c) => new Date(c.tat_deadline).getTime() - now > 0 && new Date(c.tat_deadline).getTime() - now < 5 * 60 * 1000,
@@ -168,7 +195,6 @@ export default function OpsCommandCenter() {
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
   }, [filteredActive]);
 
-  // Radiologist load (active, non-completed)
   const loadByRad = useMemo(() => {
     const active = new Map<string, number>();
     const finished = new Map<string, number>();
@@ -183,31 +209,6 @@ export default function OpsCommandCenter() {
     });
     return { active, finished };
   }, [cases]);
-
-  const filtered = useMemo(() => {
-    const activeIds = new Set(rads.filter((r) => r.is_active).map((r) => r.id));
-    let list = cases.filter((c) => {
-      if (modalityFilter !== "all" && c.modality !== modalityFilter) return false;
-      if (urgencyFilter !== "all" && c.urgency !== urgencyFilter) return false;
-      if (statusFilter !== "all" && c.status !== statusFilter) return false;
-      if (radFilter === "active" && !(c.assigned_to && activeIds.has(c.assigned_to))) return false;
-      if (radFilter === "inactive" && !(c.assigned_to && !activeIds.has(c.assigned_to))) return false;
-      if (breachOnly && !(c.status !== "completed" && new Date(c.tat_deadline).getTime() <= Date.now())) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        if (
-          !c.case_number.toLowerCase().includes(q) &&
-          !c.patient_name.toLowerCase().includes(q) &&
-          !c.study_type.toLowerCase().includes(q)
-        ) return false;
-      }
-      return true;
-    });
-    if (sortMode === "priority") {
-      list = [...list].sort((a, b) => priorityScore(a) - priorityScore(b));
-    }
-    return list;
-  }, [cases, rads, modalityFilter, urgencyFilter, radFilter, breachOnly, search, sortMode]);
 
   const handleSeed = async () => {
     if (!confirm("This will WIPE all existing cases, radiologists, and eligibility, then insert 200 demo cases + 30 radiologists. Continue?")) return;
