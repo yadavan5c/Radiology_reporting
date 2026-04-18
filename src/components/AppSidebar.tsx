@@ -75,8 +75,8 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="px-3 py-4">
         <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-md bg-gradient-to-br from-primary to-[hsl(var(--primary-glow))] flex items-center justify-center shadow-[var(--shadow-glow)]">
-            <Activity className="h-4 w-4 text-primary-foreground" />
+          <div className="h-8 w-8 rounded-md bg-gradient-to-br from-primary to-[hsl(var(--primary-glow))] flex items-center justify-center shadow-[var(--shadow-glow)] overflow-hidden">
+            <img src="/logo.png" alt="RAD Flow" className="h-full w-full object-cover p-1" />
           </div>
           {!collapsed && (
             <div className="flex flex-col">
