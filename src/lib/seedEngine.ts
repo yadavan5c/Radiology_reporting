@@ -7,7 +7,6 @@ import {
   Urgency,
 } from "./constants";
 
-// 30 named radiologists
 const RAD_NAMES = [
   "Dr. Aanya Kapoor", "Dr. Bhavesh Rao", "Dr. Carmen Diaz", "Dr. Dmitri Volkov",
   "Dr. Elena Petrova", "Dr. Farah Idris", "Dr. Gabriel Costa", "Dr. Hana Sato",
@@ -19,16 +18,8 @@ const RAD_NAMES = [
   "Dr. Caleb Stone", "Dr. Diya Sharma",
 ];
 
-// Uneven eligibility: each radiologist gets 1-3 subspecialties weighted unevenly.
-// Some specialties (Neuro, Chest) get more rads; Pelvis gets fewer.
 const SUBSPECIALTY_WEIGHTS: Record<string, number> = {
-  Neuro: 9,
-  Chest: 8,
-  Spine: 6,
-  MSK_Upper: 7,
-  MSK_Lower: 7,
-  Body: 5,
-  Pelvis: 3,
+  Neuro: 9, Chest: 8, Spine: 6, MSK_Upper: 7, MSK_Lower: 7, Body: 5, Pelvis: 3,
 };
 
 function pickWeighted(weights: Record<string, number>, exclude: Set<string>): string | null {
@@ -43,59 +34,40 @@ function pickWeighted(weights: Record<string, number>, exclude: Set<string>): st
   return entries[0][0];
 }
 
-function rand<T>(arr: readonly T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
+function rand<T>(arr: readonly T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
+function randInt(min: number, max: number): number { return Math.floor(Math.random() * (max - min + 1)) + min; }
 
 const FIRST_NAMES = ["John", "Jane", "Alex", "Maria", "Wei", "Aiko", "Omar", "Fatima", "Liam", "Sophia", "Noah", "Olivia", "Ravi", "Mei", "Carlos", "Anika"];
 const LAST_NAMES = ["Doe", "Smith", "Lee", "Garcia", "Patel", "Kim", "Singh", "Khan", "Brown", "Wilson", "Nguyen", "Lopez", "Tanaka", "Costa", "Ali", "Mendez"];
-
-const CLINICAL_NOTES = [
-  "Suspected acute stroke — code stroke activated",
-  "MVA trauma, possible C-spine injury",
-  "Persistent chest pain, rule out PE",
-  "Acute abdominal pain, query appendicitis",
-  "Headache with photophobia, rule out SAH",
-  "Post-op surveillance imaging",
-  "Suspected pneumonia, productive cough",
-  "Trauma fall, rule out fracture",
-  "Persistent back pain, neuro deficits",
-  "Pre-op planning, oncology workup",
-  "Follow-up known mass, restaging",
-  "Acute SOB, rule out pulmonary edema",
-];
-
-const PATIENT_AGE_SEX = () => `${randInt(18, 92)}${rand(["M", "F"])}`;
+const CLINICAL_NOTES = ["Suspected acute stroke", "MVA trauma", "Chest pain", "Acute abdominal pain", "Headache", "Post-op surveillance", "Suspected pneumonia", "Trauma fall"];
 
 export type SeedProgress = (msg: string) => void;
 
 export async function seedDemoData(onProgress?: SeedProgress) {
   const log = onProgress ?? (() => {});
 
-  log("Wiping existing data…");
-  await supabase.from("cases").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-  await supabase.from("radiologist_eligibility").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-  await supabase.from("radiologists").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  log("Optimizing: Wiping data...");
+  await Promise.all([
+    supabase.from("cases").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+    supabase.from("radiologist_eligibility").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+    supabase.from("radiologists").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+  ]);
 
-  log("Inserting 30 radiologists…");
+  log("Inserting 30 radiologists with speed factors...");
   const radRows = RAD_NAMES.map((name, i) => ({
     name,
     employee_id: `EMP-${String(i + 1).padStart(3, "0")}`,
-    is_active: Math.random() > 0.1, // ~27 active
+    is_active: Math.random() > 0.05,
+    speed_factor: parseFloat((0.7 + Math.random() * 0.8).toFixed(2)), // 0.7 to 1.5
   }));
-  const { data: rads, error: radErr } = await supabase
-    .from("radiologists")
-    .insert(radRows)
-    .select();
+  
+  const { data: rads, error: radErr } = await supabase.from("radiologists").insert(radRows).select();
   if (radErr || !rads) throw new Error(radErr?.message ?? "Failed to insert radiologists");
 
-  log("Assigning uneven subspecialty eligibility…");
+  log("Assigning subspecialties...");
   const eligRows: { radiologist_id: string; study_type: string }[] = [];
   rads.forEach((r) => {
-    const numSpecs = randInt(1, 3); // unevenly 1-3 specialties
+    const numSpecs = randInt(1, 3);
     const picked = new Set<string>();
     for (let i = 0; i < numSpecs; i++) {
       const spec = pickWeighted(SUBSPECIALTY_WEIGHTS, picked);
@@ -107,108 +79,62 @@ export async function seedDemoData(onProgress?: SeedProgress) {
       });
     });
   });
-  // De-dupe (same study from overlapping specialties)
-  const seen = new Set<string>();
-  const dedupedElig = eligRows.filter((row) => {
-    const k = `${row.radiologist_id}|${row.study_type}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-  const { error: eligErr } = await supabase.from("radiologist_eligibility").insert(dedupedElig);
+
+  // Batch insert eligibility
+  const { error: eligErr } = await supabase.from("radiologist_eligibility").insert(eligRows);
   if (eligErr) throw new Error(eligErr.message);
 
-  log("Generating 300 cases (200 Pending / 100 Completed)…");
-  const distribution: { modality: Modality; count: number }[] = [
-    { modality: "X-ray", count: 150 },
-    { modality: "CT", count: 90 },
-    { modality: "MRI", count: 60 },
-  ];
-
+  log("Generating 300 diverse cases...");
   const allCases: any[] = [];
-  let activeRads = rads.filter((r) => r.is_active);
-  let radIdx = 0;
-  let critCount = 0;
-  const TARGET_CRITICAL = 60; // Proportional to 300
-  let completedCount = 0;
-  const TARGET_COMPLETED = 100;
+  const distribution: { modality: Modality; count: number }[] = [
+    { modality: "X-ray", count: 150 }, { modality: "CT", count: 90 }, { modality: "MRI", count: 60 },
+  ];
 
   for (const { modality, count } of distribution) {
     const studies = STUDY_TYPES_BY_MODALITY[modality];
     const [slaMin, slaMax] = MODALITY_SLA_MINUTES[modality];
     for (let i = 0; i < count; i++) {
       const study = rand(studies);
+      const isCritical = Math.random() < 0.2;
+      const urgency: Urgency = isCritical ? "Stat" : (rand(["Urgent", "Routine", "Routine", "Urgent"]) as Urgency);
       const slaMinutes = randInt(slaMin, slaMax);
-      const isCritical = critCount < TARGET_CRITICAL && Math.random() < 0.3;
-      if (isCritical) critCount++;
+      
+      const tat = new Date(Date.now() + (isCritical ? randInt(-2, 5) : randInt(slaMinutes, slaMinutes * 3)) * 60_000).toISOString();
+      const activated = new Date(Date.now() - randInt(1, 60) * 60_000).toISOString();
 
-      const isCompleted = completedCount < TARGET_COMPLETED && Math.random() < 0.4;
-      if (isCompleted) completedCount++;
-
-      const minutesUntilDeadline = isCritical ? randInt(-2, 4) : randInt(slaMinutes / 2, slaMinutes * 2);
-      const tat = new Date(Date.now() + minutesUntilDeadline * 60_000).toISOString();
-      const activated = new Date(Date.now() - randInt(1, 120) * 60_000).toISOString();
-      const urgency: Urgency = isCritical ? "Stat" : (rand(["Stat", "Urgent", "Routine", "Routine", "Urgent"]) as Urgency);
-
-      if (isCompleted) {
-        const assignee = activeRads[radIdx % activeRads.length];
-        radIdx++;
-        allCases.push({
-          case_number: `CASE-${new Date().toISOString().slice(0,10).replace(/-/g, "")}-${String(allCases.length).padStart(4, "0")}-${randInt(1000, 9999)}`,
-          patient_name: `${rand(FIRST_NAMES)} ${rand(LAST_NAMES)}`,
-          patient_id: `MRN-${randInt(10000, 99999)}`,
-          modality,
-          study_type: study,
-          urgency,
-          status: "completed",
-          notes: `${PATIENT_AGE_SEX()} • ${rand(CLINICAL_NOTES)}`,
-          activated_at: activated,
-          tat_deadline: tat,
-          assigned_to: assignee.id,
-          assigned_at: activated,
-          completed_at: new Date(new Date(activated).getTime() + randInt(5, 30) * 60_000).toISOString(),
-        });
-      } else {
-        // Pending case - NOT assigned
-        allCases.push({
-          case_number: `CASE-${new Date().toISOString().slice(0,10).replace(/-/g, "")}-${String(allCases.length).padStart(4, "0")}-${randInt(1000, 9999)}`,
-          patient_name: `${rand(FIRST_NAMES)} ${rand(LAST_NAMES)}`,
-          patient_id: `MRN-${randInt(10000, 99999)}`,
-          modality,
-          study_type: study,
-          urgency,
-          status: "pending",
-          notes: `${PATIENT_AGE_SEX()} • ${rand(CLINICAL_NOTES)}`,
-          activated_at: activated,
-          tat_deadline: tat,
-          assigned_to: null,
-          assigned_at: null,
-        });
-      }
+      allCases.push({
+        case_number: `CASE-${Date.now().toString().slice(-6)}-${allCases.length}`,
+        patient_name: `${rand(FIRST_NAMES)} ${rand(LAST_NAMES)}`,
+        patient_id: `MRN-${randInt(10000, 99999)}`,
+        modality,
+        study_type: study,
+        urgency,
+        status: "pending",
+        notes: `${randInt(18, 90)}${rand(["M", "F"])} • ${rand(CLINICAL_NOTES)}`,
+        activated_at: activated,
+        tat_deadline: tat,
+      });
     }
   }
 
-  log(`Inserting ${allCases.length} cases (${completedCount} completed, ${allCases.length - completedCount} pending)…`);
-  // Chunk inserts to avoid payload limits
+  log("Batch inserting cases...");
   const CHUNK = 50;
   for (let i = 0; i < allCases.length; i += CHUNK) {
-    const { error } = await supabase.from("cases").insert(allCases.slice(i, i + CHUNK));
-    if (error) throw new Error(error.message);
+    await supabase.from("cases").insert(allCases.slice(i, i + CHUNK));
   }
 
-  log(`Done — 30 radiologists, ${allCases.length} cases, ${critCount} SLA-critical.`);
-  return { radiologists: rads.length, cases: allCases.length, critical: critCount };
+  log("Demo Seeded Successfully!");
+  return { radiologists: rads.length, cases: allCases.length };
 }
 
-// Priority sort: SLA-Critical+CT(Neuro/Chest) → SLA-Critical → Stat → Urgent → Routine
 export function priorityScore(c: { urgency: string; modality: string; study_type: string; tat_deadline: string; status: string }): number {
   if (c.status === "completed") return 9999;
   const remaining = (new Date(c.tat_deadline).getTime() - Date.now()) / 60_000;
-  const critical = remaining < 5; // SLA critical = <5 min remaining
-  const isCtCritical = critical && c.modality === "CT" && (c.study_type === "ct-brain" || c.study_type === "ct-thorax");
-  if (isCtCritical) return 0;
-  if (critical) return 1;
-  if (c.urgency === "Stat") return 2;
-  if (c.urgency === "Urgent") return 3;
-  return 4;
+  const critical = remaining < 5;
+  const isCtNeuro = critical && c.modality === "CT" && (c.study_type.includes("brain") || c.study_type.includes("thorax"));
+  
+  if (isCtNeuro) return 0;
+  if (c.urgency === "Stat") return 1;
+  if (c.urgency === "Urgent") return 2;
+  return 3;
 }

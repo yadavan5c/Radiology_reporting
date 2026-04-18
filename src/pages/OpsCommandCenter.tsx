@@ -40,7 +40,7 @@ type CaseRow = {
   radiologists?: { name: string } | null;
 };
 
-type Rad = { id: string; name: string; is_active: boolean };
+type Rad = { id: string; name: string; is_active: boolean; speed_factor?: number };
 
 const URGENCY_VARIANT: Record<string, string> = {
   Stat: "bg-destructive/15 text-destructive border-destructive/30",
@@ -124,10 +124,10 @@ export default function OpsCommandCenter() {
       .on("postgres_changes", { event: "*", schema: "public", table: "radiologists" }, fetchAll)
       .subscribe();
     
-    // Auto-run the flow engine every 3 seconds for demo purposes
+    // Auto-run the flow engine every 1 second for real-time responsiveness
     const engineInterval = setInterval(async () => {
       await supabase.rpc('run_radiology_flow_engine');
-    }, 3000);
+    }, 1000);
 
     const tickId = setInterval(() => setTick((t) => t + 1), 1000);
     return () => {
@@ -378,7 +378,15 @@ export default function OpsCommandCenter() {
                           <TableCell><Badge className={URGENCY_VARIANT[c.urgency] + " border"}>{URGENCY_LABEL[c.urgency as keyof typeof URGENCY_LABEL] ?? c.urgency}</Badge></TableCell>
                           <TableCell><Badge className={STATUS_VARIANT[c.status] + " border capitalize"}>{c.status.replace("_", " ")}</Badge></TableCell>
                           <TableCell><Countdown deadline={c.tat_deadline} status={c.status} /></TableCell>
-                          <TableCell className="text-sm">{c.radiologists?.name ?? <span className="text-muted-foreground italic">Unassigned</span>}</TableCell>
+                          <TableCell className="text-sm">
+                            {c.radiologists?.name ? (
+                              c.radiologists.name
+                            ) : c.coverage_gap ? (
+                              <Badge variant="destructive" className="bg-destructive/20 text-destructive text-[10px] animate-pulse">COVERAGE GAP</Badge>
+                            ) : (
+                              <span className="text-muted-foreground italic">Unassigned</span>
+                            )}
+                          </TableCell>
                         </TableRow>
                       );
                     })
@@ -442,11 +450,11 @@ export default function OpsCommandCenter() {
                 .map((r) => {
                   const active = loadByRad.active.get(r.id) ?? 0;
                   const finished = loadByRad.finished.get(r.id) ?? 0;
-                  return { id: r.id, name: r.name, active, finished, total: active + finished, manual: false };
+                  return { id: r.id, name: r.name, active, finished, total: active + finished, manual: false, speed: r.speed_factor };
                 });
               const merged = [
                 ...live,
-                ...manualLoads.map((m) => ({ ...m, active: m.load, finished: 0, total: m.load, manual: true })),
+                ...manualLoads.map((m) => ({ ...m, active: m.load, finished: 0, total: m.load, manual: true, speed: 1.0 })),
               ].sort((a, b) => b.total - a.total);
               if (merged.length === 0) {
                 return <p className="text-xs text-muted-foreground">No active radiologists</p>;
@@ -464,7 +472,7 @@ export default function OpsCommandCenter() {
                         {r.manual && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">manual</Badge>}
                       </span>
                       <span className="text-muted-foreground">
-                        {r.active} act / {r.finished} fin
+                        {r.active} act / {r.finished} fin {r.speed && <span className="text-primary font-mono ml-1">⚡{r.speed}x</span>}
                       </span>
                     </div>
                     <div className="h-4 rounded-md bg-muted overflow-hidden flex">
