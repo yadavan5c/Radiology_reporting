@@ -1,12 +1,13 @@
 -- 1. Clear the old version of the function
 DROP FUNCTION IF EXISTS run_radiology_flow_engine();
 
--- Add missing columns
+-- 2. Add missing columns
 ALTER TABLE radiologists ADD COLUMN IF NOT EXISTS speed_factor FLOAT DEFAULT 1.0;
+ALTER TABLE radiologists ADD COLUMN IF NOT EXISTS last_assigned_at TIMESTAMPTZ;
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS start_time TIMESTAMPTZ;
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS coverage_gap BOOLEAN DEFAULT FALSE;
 
--- Create or replace the flow engine
+-- 3. Re-create the Intelligence Flow Engine
 CREATE OR REPLACE FUNCTION run_radiology_flow_engine()
 RETURNS void AS $$
 DECLARE
@@ -17,7 +18,7 @@ DECLARE
     v_rad_speed FLOAT;
     v_final_minutes FLOAT;
 BEGIN
-    -- 1. SLA ESCALATION & BREACH CHECK
+    -- SLA ESCALATION
     UPDATE cases
     SET 
         urgency = CASE 
@@ -27,14 +28,13 @@ BEGIN
         END
     WHERE status != 'completed';
 
-    -- 2. AUTO-COMPLETION LOGIC
+    -- AUTO-COMPLETION LOGIC
     FOR case_record IN 
         SELECT c.*, r.speed_factor as rad_speed
         FROM cases c
         JOIN radiologists r ON c.assigned_to = r.id
         WHERE c.status = 'in_progress'
     LOOP
-        -- Calculate base time
         v_base_time := CASE 
             WHEN case_record.modality = 'X-ray' THEN 3
             WHEN case_record.modality = 'CT' THEN 7
@@ -42,7 +42,6 @@ BEGIN
             ELSE 5
         END;
 
-        -- Calculate urgency multiplier
         v_urgency_mult := CASE 
             WHEN case_record.urgency = 'Stat' THEN 0.7
             WHEN case_record.urgency = 'Urgent' THEN 1.0
@@ -52,7 +51,6 @@ BEGIN
 
         v_final_minutes := v_base_time * v_urgency_mult * COALESCE(case_record.rad_speed, 1.0);
 
-        -- If time is up, mark completed
         IF (now() - case_record.start_time) >= (v_final_minutes * interval '1 minute') THEN
             UPDATE cases 
             SET status = 'completed', completed_at = now()
@@ -60,7 +58,7 @@ BEGIN
         END IF;
     END LOOP;
 
-    -- 3. ASSIGNMENT LOGIC
+    -- ASSIGNMENT LOGIC
     FOR case_record IN 
         SELECT * FROM cases 
         WHERE status = 'pending'
@@ -73,15 +71,14 @@ BEGIN
             END ASC,
             activated_at ASC
     LOOP
-        -- Find best eligible radiologist
         SELECT r.id INTO best_rad_id
         FROM radiologists r
         JOIN radiologist_eligibility re ON r.id = re.radiologist_id
         WHERE r.is_active = true
           AND re.study_type = case_record.study_type
-          -- Simple load calculation: count non-completed cases assigned
           ORDER BY 
             (SELECT count(*) FROM cases WHERE assigned_to = r.id AND status != 'completed') ASC,
+            r.last_assigned_at ASC NULLS FIRST,
             r.speed_factor ASC
           LIMIT 1;
 
@@ -90,10 +87,13 @@ BEGIN
             SET 
                 status = 'assigned',
                 assigned_to = best_rad_id,
-                assigned_at = now()
+                assigned_at = now(),
+                coverage_gap = FALSE
             WHERE id = case_record.id;
+            
+            -- Update radiologist last assigned time
+            UPDATE radiologists SET last_assigned_at = now() WHERE id = best_rad_id;
         ELSE
-            -- Coverage gap
             UPDATE cases SET coverage_gap = TRUE WHERE id = case_record.id;
         END IF;
     END LOOP;

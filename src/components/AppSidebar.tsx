@@ -74,17 +74,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="px-3 py-4">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-md bg-gradient-to-br from-primary to-[hsl(var(--primary-glow))] flex items-center justify-center shadow-[var(--shadow-glow)] overflow-hidden">
-            <img src="/logo.png" alt="RAD Flow" className="h-full w-full object-cover p-1" />
-          </div>
-          {!collapsed && (
-            <div className="flex flex-col">
-              <span className="text-base font-bold tracking-tight text-sidebar-foreground">RAD Flow</span>
-              <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Intelligence</span>
-            </div>
-          )}
-        </div>
+        <SidebarBranding collapsed={collapsed} />
       </SidebarHeader>
 
       <SidebarContent>
@@ -160,3 +150,26 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
+import { memo } from "react";
+
+const SidebarBranding = memo(({ collapsed }: { collapsed: boolean }) => (
+  <div className="flex items-center gap-2">
+    <div className="h-8 w-8 rounded-md bg-gradient-to-br from-primary to-[hsl(var(--primary-glow))] flex items-center justify-center shadow-[var(--shadow-glow)] overflow-hidden">
+      <img 
+        src="/logo.png" 
+        alt="RAD Flow" 
+        className="h-full w-full object-cover p-1" 
+        width={32} 
+        height={32}
+      />
+    </div>
+    {!collapsed && (
+      <div className="flex flex-col">
+        <span className="text-base font-bold tracking-tight text-sidebar-foreground">RAD Flow</span>
+        <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Intelligence</span>
+      </div>
+    )}
+  </div>
+));
+
+SidebarBranding.displayName = "SidebarBranding";
