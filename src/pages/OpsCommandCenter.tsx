@@ -138,15 +138,18 @@ export default function OpsCommandCenter() {
   }, []);
 
   const now = Date.now();
-  const totalPool = cases.filter((c) => c.status === "pending" || c.status === "assigned").length;
-  const slaAtRisk = cases.filter(
-    (c) => c.status !== "completed" && new Date(c.tat_deadline).getTime() - now > 0 && new Date(c.tat_deadline).getTime() - now < 5 * 60 * 1000,
+  
+  const filteredActive = filtered.filter((c) => c.status !== "completed");
+  const totalPool = filteredActive.length;
+  const slaAtRisk = filteredActive.filter(
+    (c) => new Date(c.tat_deadline).getTime() - now > 0 && new Date(c.tat_deadline).getTime() - now < 5 * 60 * 1000,
   ).length;
-  const slaBreached = cases.filter(
-    (c) => c.status !== "completed" && new Date(c.tat_deadline).getTime() - now <= 0,
+  const slaBreached = filteredActive.filter(
+    (c) => new Date(c.tat_deadline).getTime() - now <= 0,
   ).length;
+  
   const activeRads = rads.filter((r) => r.is_active).length;
-  const completedToday = cases.filter((c) => {
+  const completedTodayCount = cases.filter((c) => {
     if (c.status !== "completed" || !c.completed_at) return false;
     const d = new Date(c.completed_at);
     const t = new Date();
@@ -155,15 +158,15 @@ export default function OpsCommandCenter() {
 
   const studyData = useMemo(() => {
     const map = new Map<string, number>();
-    cases.filter(c => c.status !== "completed").forEach((c) => map.set(c.study_type, (map.get(c.study_type) ?? 0) + 1));
+    filteredActive.forEach((c) => map.set(c.study_type, (map.get(c.study_type) ?? 0) + 1));
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [cases]);
+  }, [filteredActive]);
 
   const modalityData = useMemo(() => {
     const map = new Map<string, number>();
-    cases.filter(c => c.status !== "completed").forEach((c) => map.set(c.modality, (map.get(c.modality) ?? 0) + 1));
+    filteredActive.forEach((c) => map.set(c.modality, (map.get(c.modality) ?? 0) + 1));
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [cases]);
+  }, [filteredActive]);
 
   // Radiologist load (active, non-completed)
   const loadByRad = useMemo(() => {
@@ -237,7 +240,7 @@ export default function OpsCommandCenter() {
         <KpiCard label="SLA at Risk" value={slaAtRisk} icon={<AlertTriangle className="h-4 w-4" />} tone="warning" />
         <KpiCard label="SLA Breached" value={slaBreached} icon={<Flame className="h-4 w-4" />} tone="destructive" />
         <KpiCard label="Active Radiologists" value={activeRads} icon={<UserCheck className="h-4 w-4" />} tone="success" />
-        <KpiCard label="Completed Today" value={completedToday} icon={<CheckCircle2 className="h-4 w-4" />} tone="primary" />
+        <KpiCard label="Completed Today" value={completedTodayCount} icon={<CheckCircle2 className="h-4 w-4" />} tone="primary" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
