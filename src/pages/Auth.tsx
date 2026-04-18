@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,49 +9,23 @@ export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(false);
   const [logoError, setLogoError] = useState(false);
   const navigate = useNavigate();
 
-  const handleAuth = async (e: React.FormEvent) => {
+  const handleBypassAuth = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    try {
-      // If it's a simple username, convert to a virtual email
-      const finalEmail = email.includes("@") ? email : `${email.toLowerCase().replace(/\s+/g, "")}@radflow.ai`;
-      
-      if (isSignUp) {
-        const { data, error } = await supabase.auth.signUp({ email: finalEmail, password });
-        if (error) throw error;
-        
-        if (data.session) {
-          toast.success("Account created! Redirecting...");
-          setTimeout(() => navigate("/"), 1000);
-        } else {
-          const { error: signInErr } = await supabase.auth.signInWithPassword({ email: finalEmail, password });
-          if (!signInErr) {
-            navigate("/");
-          } else {
-            toast.success("Account created. Please try signing in now.");
-          }
-        }
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email: finalEmail, password });
-        if (error) throw error;
-        toast.success("Logged in successfully!");
-        navigate("/");
-      }
-    } catch (error: any) {
-      toast.error(error.message);
-    } finally {
+    
+    // EMERGENCY BYPASS LOGIC
+    // We store a flag in localStorage to bypass the ProtectedRoute check
+    localStorage.setItem("radflow_auth_bypass", "true");
+    localStorage.setItem("radflow_user_name", email || "Guest");
+    
+    toast.success("Access Granted (Bypass Mode)");
+    setTimeout(() => {
+      navigate("/");
       setLoading(false);
-    }
-  };
-
-  const handleGuestLogin = () => {
-    setEmail("admin");
-    setPassword("password123");
-    toast.info("Demo credentials loaded. Click Access System.");
+    }, 500);
   };
 
   return (
@@ -75,10 +48,10 @@ export default function Auth() {
           </div>
           <CardTitle className="text-3xl font-bold tracking-tight text-foreground">RAD FLOW</CardTitle>
           <CardDescription className="text-muted-foreground/80">
-            {isSignUp ? "Create your diagnostic account" : "Sign in to the intelligence command center"}
+            Intelligence Command Center Access
           </CardDescription>
         </CardHeader>
-        <form onSubmit={handleAuth}>
+        <form onSubmit={handleBypassAuth}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Input
@@ -103,7 +76,7 @@ export default function Auth() {
           </CardContent>
           <CardFooter className="flex flex-col gap-4">
             <Button type="submit" className="w-full font-semibold h-11 shadow-lg shadow-primary/20 bg-primary hover:bg-primary-glow transition-all" disabled={loading}>
-              {loading ? "Processing..." : isSignUp ? "Create Account" : "Access System"}
+              {loading ? "Accessing..." : "Access System"}
             </Button>
             
             <div className="relative w-full py-2">
@@ -111,23 +84,9 @@ export default function Auth() {
               <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-card px-2 text-muted-foreground font-semibold tracking-widest">Diagnostic Access</span></div>
             </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full h-11 border-primary/20 hover:bg-primary/5 text-primary font-medium"
-              onClick={handleGuestLogin}
-              disabled={loading}
-            >
-              🚀 Load Demo Credentials
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => setIsSignUp(!isSignUp)}
-            >
-              {isSignUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up"}
-            </Button>
+            <p className="text-[10px] text-center text-muted-foreground opacity-50 px-4">
+              Hackathon Mode Enabled: Any credentials will be accepted.
+            </p>
           </CardFooter>
         </form>
       </Card>
