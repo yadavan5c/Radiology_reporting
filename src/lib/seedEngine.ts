@@ -118,18 +118,20 @@ export async function seedDemoData(onProgress?: SeedProgress) {
   const { error: eligErr } = await supabase.from("radiologist_eligibility").insert(dedupedElig);
   if (eligErr) throw new Error(eligErr.message);
 
-  log("Generating 200 cases (100 XR / 60 CT / 40 MRI)…");
+  log("Generating 300 cases (200 Pending / 100 Completed)…");
   const distribution: { modality: Modality; count: number }[] = [
-    { modality: "X-ray", count: 100 },
-    { modality: "CT", count: 60 },
-    { modality: "MRI", count: 40 },
+    { modality: "X-ray", count: 150 },
+    { modality: "CT", count: 90 },
+    { modality: "MRI", count: 60 },
   ];
 
   const allCases: any[] = [];
   let activeRads = rads.filter((r) => r.is_active);
   let radIdx = 0;
   let critCount = 0;
-  const TARGET_CRITICAL = 40;
+  const TARGET_CRITICAL = 60; // Proportional to 300
+  let completedCount = 0;
+  const TARGET_COMPLETED = 100;
 
   for (const { modality, count } of distribution) {
     const studies = STUDY_TYPES_BY_MODALITY[modality];
@@ -140,44 +142,53 @@ export async function seedDemoData(onProgress?: SeedProgress) {
       const isCritical = critCount < TARGET_CRITICAL && Math.random() < 0.3;
       if (isCritical) critCount++;
 
-      // Critical cases: deadline 1-4 minutes from now (or already breached)
-      // Normal: deadline based on full SLA window
+      const isCompleted = completedCount < TARGET_COMPLETED && Math.random() < 0.4;
+      if (isCompleted) completedCount++;
+
       const minutesUntilDeadline = isCritical ? randInt(-2, 4) : randInt(slaMinutes / 2, slaMinutes * 2);
       const tat = new Date(Date.now() + minutesUntilDeadline * 60_000).toISOString();
-      const activated = new Date(Date.now() - randInt(1, 30) * 60_000).toISOString();
-
+      const activated = new Date(Date.now() - randInt(1, 120) * 60_000).toISOString();
       const urgency: Urgency = isCritical ? "Stat" : (rand(["Stat", "Urgent", "Routine", "Routine", "Urgent"]) as Urgency);
 
-      // Round-robin assign to an active rad (subspecialty-aware best effort)
-      const assignee = activeRads[radIdx % activeRads.length];
-      radIdx++;
-
-      allCases.push({
-        case_number: `CASE-${new Date().toISOString().slice(0,10).replace(/-/g, "")}-${String(allCases.length).padStart(4, "0")}-${randInt(1000, 9999)}`,
-        patient_name: `${rand(FIRST_NAMES)} ${rand(LAST_NAMES)}`,
-        patient_id: `MRN-${randInt(10000, 99999)}`,
-        modality,
-        study_type: study,
-        urgency,
-        status: "assigned",
-        notes: `${PATIENT_AGE_SEX()} • ${rand(CLINICAL_NOTES)}`,
-        activated_at: activated,
-        tat_deadline: tat,
-        assigned_to: assignee.id,
-        assigned_at: activated, // Assuming it was assigned when activated for seeding
-      });
+      if (isCompleted) {
+        const assignee = activeRads[radIdx % activeRads.length];
+        radIdx++;
+        allCases.push({
+          case_number: `CASE-${new Date().toISOString().slice(0,10).replace(/-/g, "")}-${String(allCases.length).padStart(4, "0")}-${randInt(1000, 9999)}`,
+          patient_name: `${rand(FIRST_NAMES)} ${rand(LAST_NAMES)}`,
+          patient_id: `MRN-${randInt(10000, 99999)}`,
+          modality,
+          study_type: study,
+          urgency,
+          status: "completed",
+          notes: `${PATIENT_AGE_SEX()} • ${rand(CLINICAL_NOTES)}`,
+          activated_at: activated,
+          tat_deadline: tat,
+          assigned_to: assignee.id,
+          assigned_at: activated,
+          completed_at: new Date(new Date(activated).getTime() + randInt(5, 30) * 60_000).toISOString(),
+        });
+      } else {
+        // Pending case - NOT assigned
+        allCases.push({
+          case_number: `CASE-${new Date().toISOString().slice(0,10).replace(/-/g, "")}-${String(allCases.length).padStart(4, "0")}-${randInt(1000, 9999)}`,
+          patient_name: `${rand(FIRST_NAMES)} ${rand(LAST_NAMES)}`,
+          patient_id: `MRN-${randInt(10000, 99999)}`,
+          modality,
+          study_type: study,
+          urgency,
+          status: "pending",
+          notes: `${PATIENT_AGE_SEX()} • ${rand(CLINICAL_NOTES)}`,
+          activated_at: activated,
+          tat_deadline: tat,
+          assigned_to: null,
+          assigned_at: null,
+        });
+      }
     }
   }
 
-  // Top up critical to exactly 40 if we fell short
-  while (critCount < TARGET_CRITICAL) {
-    const c = allCases[critCount];
-    c.urgency = "Stat";
-    c.tat_deadline = new Date(Date.now() + randInt(-2, 4) * 60_000).toISOString();
-    critCount++;
-  }
-
-  log(`Inserting ${allCases.length} cases…`);
+  log(`Inserting ${allCases.length} cases (${completedCount} completed, ${allCases.length - completedCount} pending)…`);
   // Chunk inserts to avoid payload limits
   const CHUNK = 50;
   for (let i = 0; i < allCases.length; i += CHUNK) {

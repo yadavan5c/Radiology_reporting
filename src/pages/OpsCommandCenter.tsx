@@ -94,8 +94,9 @@ export default function OpsCommandCenter() {
   const [modalityFilter, setModalityFilter] = useState<string>("all");
   const [urgencyFilter, setUrgencyFilter] = useState<string>("all");
   const [radFilter, setRadFilter] = useState<string>("all"); // "all" | "active" | "inactive"
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [breachOnly, setBreachOnly] = useState(false);
-  const [sortMode, setSortMode] = useState<"recent" | "priority">("recent");
+  const [sortMode, setSortMode] = useState<"recent" | "priority">("priority");
   const [selected, setSelected] = useState<CaseRow | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [, setTick] = useState(0);
@@ -147,25 +148,30 @@ export default function OpsCommandCenter() {
 
   const studyData = useMemo(() => {
     const map = new Map<string, number>();
-    cases.forEach((c) => map.set(c.study_type, (map.get(c.study_type) ?? 0) + 1));
+    cases.filter(c => c.status !== "completed").forEach((c) => map.set(c.study_type, (map.get(c.study_type) ?? 0) + 1));
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
   }, [cases]);
 
   const modalityData = useMemo(() => {
     const map = new Map<string, number>();
-    cases.forEach((c) => map.set(c.modality, (map.get(c.modality) ?? 0) + 1));
+    cases.filter(c => c.status !== "completed").forEach((c) => map.set(c.modality, (map.get(c.modality) ?? 0) + 1));
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
   }, [cases]);
 
   // Radiologist load (active, non-completed)
   const loadByRad = useMemo(() => {
-    const m = new Map<string, number>();
+    const active = new Map<string, number>();
+    const finished = new Map<string, number>();
     cases.forEach((c) => {
-      if (c.assigned_to && c.status !== "completed") {
-        m.set(c.assigned_to, (m.get(c.assigned_to) ?? 0) + 1);
+      if (c.assigned_to) {
+        if (c.status === "completed") {
+          finished.set(c.assigned_to, (finished.get(c.assigned_to) ?? 0) + 1);
+        } else {
+          active.set(c.assigned_to, (active.get(c.assigned_to) ?? 0) + 1);
+        }
       }
     });
-    return m;
+    return { active, finished };
   }, [cases]);
 
   const filtered = useMemo(() => {
@@ -173,6 +179,7 @@ export default function OpsCommandCenter() {
     let list = cases.filter((c) => {
       if (modalityFilter !== "all" && c.modality !== modalityFilter) return false;
       if (urgencyFilter !== "all" && c.urgency !== urgencyFilter) return false;
+      if (statusFilter !== "all" && c.status !== statusFilter) return false;
       if (radFilter === "active" && !(c.assigned_to && activeIds.has(c.assigned_to))) return false;
       if (radFilter === "inactive" && !(c.assigned_to && !activeIds.has(c.assigned_to))) return false;
       if (breachOnly && !(c.status !== "completed" && new Date(c.tat_deadline).getTime() <= Date.now())) return false;
@@ -285,12 +292,22 @@ export default function OpsCommandCenter() {
                 </SelectContent>
               </Select>
               <Select value={urgencyFilter} onValueChange={setUrgencyFilter}>
-                <SelectTrigger className="w-28"><SelectValue placeholder="Urgency" /></SelectTrigger>
+                <SelectTrigger className="w-24"><SelectValue placeholder="Urgency" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Urgencies</SelectItem>
+                  <SelectItem value="all">Urgency</SelectItem>
                   {URGENCY_DISPLAY_OPTIONS.map((label) => (
                     <SelectItem key={label} value={URGENCY_FROM_LABEL[label]}>{label}</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-28"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="assigned">Assigned</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={radFilter} onValueChange={setRadFilter}>
@@ -411,39 +428,51 @@ export default function OpsCommandCenter() {
             {(() => {
               const live = rads
                 .filter((r) => r.is_active)
-                .map((r) => ({ id: r.id, name: r.name, load: loadByRad.get(r.id) ?? 0, manual: false }));
+                .map((r) => {
+                  const active = loadByRad.active.get(r.id) ?? 0;
+                  const finished = loadByRad.finished.get(r.id) ?? 0;
+                  return { id: r.id, name: r.name, active, finished, total: active + finished, manual: false };
+                });
               const merged = [
                 ...live,
-                ...manualLoads.map((m) => ({ ...m, manual: true })),
-              ].sort((a, b) => b.load - a.load);
+                ...manualLoads.map((m) => ({ ...m, active: m.load, finished: 0, total: m.load, manual: true })),
+              ].sort((a, b) => b.total - a.total);
               if (merged.length === 0) {
                 return <p className="text-xs text-muted-foreground">No active radiologists</p>;
               }
               return merged.map((r) => {
-                const pct = Math.min(100, (r.load / 15) * 100);
-                const tone = r.load >= 12 ? "bg-destructive" : r.load >= 7 ? "bg-warning" : "bg-success";
+                const activePct = Math.min(100, (r.active / 15) * 100);
+                const finishedPct = Math.min(100, (r.finished / 15) * 100);
+                const activeTone = r.active >= 12 ? "bg-destructive" : r.active >= 7 ? "bg-warning" : "bg-info";
+                
                 return (
                   <div key={r.id} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs gap-2 mb-1">
+                    <div className="flex items-center justify-between text-[10px] gap-2 mb-0.5">
                       <span className="truncate font-medium flex items-center gap-1">
                         {r.name}
                         {r.manual && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">manual</Badge>}
                       </span>
-                      {r.manual && (
-                        <button
-                          type="button"
-                          onClick={() => setManualLoads((prev) => prev.filter((m) => m.id !== r.id))}
-                          className="text-muted-foreground hover:text-destructive text-xs"
-                          aria-label="Remove manual entry"
-                        >
-                          ×
-                        </button>
-                      )}
+                      <span className="text-muted-foreground">
+                        {r.active} act / {r.finished} fin
+                      </span>
                     </div>
-                    <div className="h-4 rounded-full bg-muted overflow-hidden">
-                      <div className={`h-full ${tone} transition-all flex items-center justify-end px-1.5`} style={{ width: `${Math.max(pct, 5)}%` }}>
-                        <span className="font-mono text-[10px] text-white font-bold">{r.load}</span>
-                      </div>
+                    <div className="h-4 rounded-md bg-muted overflow-hidden flex">
+                      {r.active > 0 && (
+                        <div 
+                          className={`h-full ${activeTone} transition-all flex items-center justify-center border-r border-background/20`} 
+                          style={{ width: `${Math.max(activePct, 8)}%` }}
+                        >
+                          <span className="font-mono text-[9px] text-white font-bold">{r.active}</span>
+                        </div>
+                      )}
+                      {r.finished > 0 && (
+                        <div 
+                          className="h-full bg-success transition-all flex items-center justify-center" 
+                          style={{ width: `${Math.max(finishedPct, 8)}%` }}
+                        >
+                          <span className="font-mono text-[9px] text-white font-bold">{r.finished}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
