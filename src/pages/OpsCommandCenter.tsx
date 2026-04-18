@@ -123,9 +123,16 @@ export default function OpsCommandCenter() {
       .on("postgres_changes", { event: "*", schema: "public", table: "cases" }, fetchAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "radiologists" }, fetchAll)
       .subscribe();
+    
+    // Auto-run the flow engine every 3 seconds for demo purposes
+    const engineInterval = setInterval(async () => {
+      await supabase.rpc('run_radiology_flow_engine');
+    }, 3000);
+
     const tickId = setInterval(() => setTick((t) => t + 1), 1000);
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(engineInterval);
       clearInterval(tickId);
     };
   }, []);

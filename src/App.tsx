@@ -8,6 +8,8 @@ import OpsCommandCenter from "./pages/OpsCommandCenter";
 import ProviderPortal from "./pages/ProviderPortal";
 import RadiologistManagement from "./pages/RadiologistManagement";
 import NotFound from "./pages/NotFound.tsx";
+import Auth from "./pages/Auth";
+import ProtectedRoute from "@/components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -18,12 +20,16 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route element={<Layout />}>
-            <Route path="/" element={<OpsCommandCenter />} />
-            <Route path="/provider" element={<ProviderPortal />} />
-            <Route path="/radiologists" element={<RadiologistManagement />} />
+          <Route path="/auth" element={<Auth />} />
+          
+          <Route element={<ProtectedRoute />}>
+            <Route element={<Layout />}>
+              <Route path="/" element={<OpsCommandCenter />} />
+              <Route path="/provider" element={<ProviderPortal />} />
+              <Route path="/radiologists" element={<RadiologistManagement />} />
+            </Route>
           </Route>
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
