@@ -195,12 +195,7 @@ export default function OpsCommandCenter() {
   ).length;
   
   const activeRads = rads.filter((r) => r.is_active).length;
-  const completedTodayCount = cases.filter((c) => {
-    if (c.status !== "completed" || !c.completed_at) return false;
-    const d = new Date(c.completed_at);
-    const t = new Date();
-    return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
-  }).length;
+  const completedTodayCount = cases.filter((c) => c.status === "completed").length;
 
   const studyData = useMemo(() => {
     const map = new Map<string, number>();

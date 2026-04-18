@@ -53,16 +53,17 @@ export async function seedDemoData(onProgress?: SeedProgress) {
     supabase.from("radiologists").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
   ]);
 
-  log("Inserting 30 radiologists with speed factors...");
+  log("Inserting 30 radiologists...");
   const radRows = RAD_NAMES.map((name, i) => ({
     name,
     employee_id: `EMP-${String(i + 1).padStart(3, "0")}`,
     is_active: Math.random() > 0.05,
-    speed_factor: parseFloat((0.7 + Math.random() * 0.8).toFixed(2)), // 0.7 to 1.5
+    speed_factor: parseFloat((0.7 + Math.random() * 0.8).toFixed(2)),
   }));
   
   const { data: rads, error: radErr } = await supabase.from("radiologists").insert(radRows).select();
   if (radErr || !rads) throw new Error(radErr?.message ?? "Failed to insert radiologists");
+  const activeRads = rads.filter(r => r.is_active);
 
   log("Assigning subspecialties...");
   const eligRows: { radiologist_id: string; study_type: string }[] = [];
@@ -79,41 +80,63 @@ export async function seedDemoData(onProgress?: SeedProgress) {
       });
     });
   });
+  await supabase.from("radiologist_eligibility").insert(eligRows);
 
-  // Batch insert eligibility
-  const { error: eligErr } = await supabase.from("radiologist_eligibility").insert(eligRows);
-  if (eligErr) throw new Error(eligErr.message);
-
-  log("Generating 300 diverse cases...");
+  log("Generating 300 cases (100 Completed / 200 Pending)...");
   const allCases: any[] = [];
   const distribution: { modality: Modality; count: number }[] = [
     { modality: "X-ray", count: 150 }, { modality: "CT", count: 90 }, { modality: "MRI", count: 60 },
   ];
+
+  let completedSoFar = 0;
+  const TARGET_COMPLETED = 100;
 
   for (const { modality, count } of distribution) {
     const studies = STUDY_TYPES_BY_MODALITY[modality];
     const [slaMin, slaMax] = MODALITY_SLA_MINUTES[modality];
     for (let i = 0; i < count; i++) {
       const study = rand(studies);
+      const isCompleted = completedSoFar < TARGET_COMPLETED && Math.random() < 0.4;
+      if (isCompleted) completedSoFar++;
+
       const isCritical = Math.random() < 0.2;
       const urgency: Urgency = isCritical ? "Stat" : (rand(["Urgent", "Routine", "Routine", "Urgent"]) as Urgency);
       const slaMinutes = randInt(slaMin, slaMax);
       
       const tat = new Date(Date.now() + (isCritical ? randInt(-2, 5) : randInt(slaMinutes, slaMinutes * 3)) * 60_000).toISOString();
-      const activated = new Date(Date.now() - randInt(1, 60) * 60_000).toISOString();
+      const activated = new Date(Date.now() - randInt(1, 120) * 60_000).toISOString();
 
-      allCases.push({
-        case_number: `CASE-${Date.now().toString().slice(-6)}-${allCases.length}`,
-        patient_name: `${rand(FIRST_NAMES)} ${rand(LAST_NAMES)}`,
-        patient_id: `MRN-${randInt(10000, 99999)}`,
-        modality,
-        study_type: study,
-        urgency,
-        status: "pending",
-        notes: `${randInt(18, 90)}${rand(["M", "F"])} • ${rand(CLINICAL_NOTES)}`,
-        activated_at: activated,
-        tat_deadline: tat,
-      });
+      if (isCompleted) {
+        const assignee = rand(activeRads);
+        allCases.push({
+          case_number: `CASE-${Date.now().toString().slice(-6)}-${allCases.length}`,
+          patient_name: `${rand(FIRST_NAMES)} ${rand(LAST_NAMES)}`,
+          patient_id: `MRN-${randInt(10000, 99999)}`,
+          modality,
+          study_type: study,
+          urgency,
+          status: "completed",
+          notes: `${randInt(18, 90)}${rand(["M", "F"])} • Pre-seeded completion`,
+          activated_at: activated,
+          tat_deadline: tat,
+          assigned_to: assignee.id,
+          assigned_at: activated,
+          completed_at: new Date(Date.now() - randInt(1, 240) * 60_000).toISOString(), // Completed TODAY
+        });
+      } else {
+        allCases.push({
+          case_number: `CASE-${Date.now().toString().slice(-6)}-${allCases.length}`,
+          patient_name: `${rand(FIRST_NAMES)} ${rand(LAST_NAMES)}`,
+          patient_id: `MRN-${randInt(10000, 99999)}`,
+          modality,
+          study_type: study,
+          urgency,
+          status: "pending",
+          notes: `${randInt(18, 90)}${rand(["M", "F"])} • ${rand(CLINICAL_NOTES)}`,
+          activated_at: activated,
+          tat_deadline: tat,
+        });
+      }
     }
   }
 
@@ -124,7 +147,7 @@ export async function seedDemoData(onProgress?: SeedProgress) {
   }
 
   log("Demo Seeded Successfully!");
-  return { radiologists: rads.length, cases: allCases.length };
+  return { radiologists: rads.length, cases: allCases.length, completed: completedSoFar };
 }
 
 export function priorityScore(c: { urgency: string; modality: string; study_type: string; tat_deadline: string; status: string }): number {
