@@ -18,26 +18,26 @@ export default function Auth() {
     e.preventDefault();
     setLoading(true);
     try {
+      // If it's a simple username, convert to a virtual email
+      const finalEmail = email.includes("@") ? email : `${email.toLowerCase().replace(/\s+/g, "")}@radflow.ai`;
+      
       if (isSignUp) {
-        // Sign up attempt
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email: finalEmail, password });
         if (error) throw error;
         
         if (data.session) {
           toast.success("Account created! Redirecting...");
           setTimeout(() => navigate("/"), 1000);
         } else {
-          // If auto-confirm is off, they might need to sign in now
-          const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+          const { error: signInErr } = await supabase.auth.signInWithPassword({ email: finalEmail, password });
           if (!signInErr) {
             navigate("/");
           } else {
-            toast.success("Check your email (if enabled) or try signing in.");
+            toast.success("Account created. Please try signing in now.");
           }
         }
       } else {
-        // Sign in attempt
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: finalEmail, password });
         if (error) throw error;
         toast.success("Logged in successfully!");
         navigate("/");
@@ -50,11 +50,9 @@ export default function Auth() {
   };
 
   const handleGuestLogin = () => {
-    // For demo purposes, we can't easily bypass real auth in this version 
-    // without a backend hack, but we can provide demo credentials.
-    setEmail("demo@radflow.ai");
+    setEmail("admin");
     setPassword("password123");
-    toast.info("Demo credentials loaded. Click Sign In.");
+    toast.info("Demo credentials loaded. Click Access System.");
   };
 
   return (
@@ -84,8 +82,8 @@ export default function Auth() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Input
-                type="email"
-                placeholder="Email address"
+                type="text"
+                placeholder="Username or Name"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
