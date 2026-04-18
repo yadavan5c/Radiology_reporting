@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -88,12 +89,10 @@ function Countdown({ deadline, status }: { deadline: string; status: string }) {
 }
 
 export default function OpsCommandCenter() {
-  const [cases, setCases] = useState<CaseRow[]>([]);
-  const [rads, setRads] = useState<Rad[]>([]);
   const [search, setSearch] = useState("");
   const [modalityFilter, setModalityFilter] = useState<string>("all");
   const [urgencyFilter, setUrgencyFilter] = useState<string>("all");
-  const [radFilter, setRadFilter] = useState<string>("all"); // "all" | "active" | "inactive"
+  const [radFilter, setRadFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [breachOnly, setBreachOnly] = useState(false);
   const [sortMode, setSortMode] = useState<"recent" | "priority">("priority");
@@ -101,30 +100,50 @@ export default function OpsCommandCenter() {
   const [seeding, setSeeding] = useState(false);
   const [, setTick] = useState(0);
 
-  // Manual radiologist load entries (local-only, for ad-hoc tracking)
+  // Manual radiologist load entries
   type ManualLoad = { id: string; name: string; load: number };
   const [manualLoads, setManualLoads] = useState<ManualLoad[]>([]);
   const [manualName, setManualName] = useState("");
   const [manualCount, setManualCount] = useState("");
 
-  const fetchAll = async () => {
-    const [{ data: caseData }, { data: radData }] = await Promise.all([
-      supabase.from("cases").select("*, radiologists(name)").order("activated_at", { ascending: false }),
-      supabase.from("radiologists").select("id, name, is_active").order("name"),
-    ]);
-    setCases((caseData ?? []) as CaseRow[]);
-    setRads((radData ?? []) as Rad[]);
-  };
+  const queryClient = useQueryClient();
+  const lastUpdateRef = useRef(0);
+
+  // 1. Fetch Data with React Query (STOPS BLINKING)
+  const { data: casesData } = useQuery({
+    queryKey: ["cases"],
+    queryFn: async () => {
+      const { data } = await supabase.from("cases").select("*, radiologists(name)").order("activated_at", { ascending: false });
+      return (data ?? []) as CaseRow[];
+    },
+    refetchInterval: 5000, // Background refresh every 5s
+  });
+
+  const { data: radsData } = useQuery({
+    queryKey: ["radiologists"],
+    queryFn: async () => {
+      const { data } = await supabase.from("radiologists").select("id, name, is_active, speed_factor").order("name");
+      return (data ?? []) as Rad[];
+    },
+    refetchInterval: 5000,
+  });
+
+  const cases = casesData ?? [];
+  const rads = radsData ?? [];
 
   useEffect(() => {
-    fetchAll();
+    // Real-time subscription to trigger a query invalidation (no local state reset!)
     const channel = supabase
-      .channel("ops-cases")
-      .on("postgres_changes", { event: "*", schema: "public", table: "cases" }, fetchAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "radiologists" }, fetchAll)
+      .channel("ops-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "cases" }, () => {
+         queryClient.invalidateQueries({ queryKey: ["cases"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "radiologists" }, () => {
+         queryClient.invalidateQueries({ queryKey: ["radiologists"] });
+      })
       .subscribe();
     
-    // Auto-run the flow engine every 5 seconds (balanced for performance/real-time)
+    // Run flow engine in background
     const engineInterval = setInterval(async () => {
       await supabase.rpc('run_radiology_flow_engine');
     }, 5000);
@@ -135,7 +154,7 @@ export default function OpsCommandCenter() {
       clearInterval(engineInterval);
       clearInterval(tickId);
     };
-  }, []);
+  }, [queryClient]);
 
   // 1. Core Derived Data (The Base for everything else)
   const filtered = useMemo(() => {
