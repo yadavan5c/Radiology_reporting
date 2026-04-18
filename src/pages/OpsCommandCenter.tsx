@@ -223,8 +223,8 @@ export default function OpsCommandCenter() {
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold">Radiology Operations Command Center</h1>
-          <p className="text-sm text-muted-foreground">Real-time monitoring of cases and radiologists</p>
+          <h1 className="text-2xl font-bold tracking-tight">RAD Flow <span className="text-primary">Command Center</span></h1>
+          <p className="text-sm text-muted-foreground">Real-time intelligent monitoring</p>
         </div>
         <Button variant="outline" size="sm" onClick={handleSeed} disabled={seeding}>
           <Database className="h-4 w-4 mr-2" />

@@ -80,8 +80,8 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="text-sm font-semibold text-sidebar-foreground">RadOps</span>
-              <span className="text-[10px] text-muted-foreground">Command Center</span>
+              <span className="text-base font-bold tracking-tight text-sidebar-foreground">RAD Flow</span>
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Intelligence</span>
             </div>
           )}
         </div>
