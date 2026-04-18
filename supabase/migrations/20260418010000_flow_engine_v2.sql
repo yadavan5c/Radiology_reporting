@@ -1,3 +1,6 @@
+-- 1. Clear the old version of the function
+DROP FUNCTION IF EXISTS run_radiology_flow_engine();
+
 -- Add missing columns
 ALTER TABLE radiologists ADD COLUMN IF NOT EXISTS speed_factor FLOAT DEFAULT 1.0;
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS start_time TIMESTAMPTZ;
