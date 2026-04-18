@@ -124,10 +124,10 @@ export default function OpsCommandCenter() {
       .on("postgres_changes", { event: "*", schema: "public", table: "radiologists" }, fetchAll)
       .subscribe();
     
-    // Auto-run the flow engine every 1 second for real-time responsiveness
+    // Auto-run the flow engine every 5 seconds (balanced for performance/real-time)
     const engineInterval = setInterval(async () => {
       await supabase.rpc('run_radiology_flow_engine');
-    }, 1000);
+    }, 5000);
 
     const tickId = setInterval(() => setTick((t) => t + 1), 1000);
     return () => {
@@ -370,7 +370,7 @@ export default function OpsCommandCenter() {
                         <TableRow
                           key={c.id}
                           onClick={() => setSelected(c)}
-                          className={`cursor-pointer ${breached ? "bg-destructive/10 animate-pulse" : ""}`}
+                          className={`cursor-pointer transition-colors hover:bg-muted/50 ${breached ? "bg-destructive/5" : ""}`}
                         >
                           <TableCell className="font-mono text-xs">{c.case_number}</TableCell>
                           <TableCell>{c.study_type}</TableCell>
