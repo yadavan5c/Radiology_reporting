@@ -18,8 +18,16 @@
     <meta name="twitter:image" content="/logo.png" />
   </head>
 
-  <body>
-    <div id="root"></div>
+  <body class="bg-background">
+    <div id="root">
+      <div style="height: 100vh; display: flex; align-items: center; justify-content: center; background: #0f172a; color: white; font-family: sans-serif;">
+        <div style="text-align: center;">
+          <h1 style="font-size: 2rem; margin-bottom: 1rem;">RAD FLOW</h1>
+          <p style="opacity: 0.8;">Loading diagnostic engine...</p>
+          <p style="font-size: 0.75rem; margin-top: 2rem; opacity: 0.5;">If this persists, check browser console (F12)</p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
